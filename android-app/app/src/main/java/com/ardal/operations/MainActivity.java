@@ -27,7 +27,7 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult;
 import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
-import com.google.mlkit.vision.text.cyrillic.CyrillicTextRecognizerOptions;
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -128,7 +128,7 @@ public class MainActivity extends Activity {
         scanner = GmsDocumentScanning.getClient(options);
 
         textRecognizer = TextRecognition.getClient(
-                new CyrillicTextRecognizerOptions.Builder().build()
+                TextRecognizerOptions.DEFAULT_OPTIONS
         );
 
         if (savedInstanceState == null) {
@@ -234,7 +234,7 @@ public class MainActivity extends Activity {
         if (index >= pages.size()) {
             try {
                 JSONObject root = new JSONObject();
-                root.put("engine", "mlkit-cyrillic-layout-v1");
+                root.put("engine", "mlkit-latin-layout-v1");
                 root.put("pages", pageArray);
                 callback.done(root.toString());
             } catch (Exception e) {
