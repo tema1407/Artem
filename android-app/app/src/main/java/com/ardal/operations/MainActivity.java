@@ -17,7 +17,10 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Toast;\nimport android.util.Base64;\n\nimport androidx.core.content.FileProvider;
+import android.widget.Toast;
+import android.util.Base64;
+
+import androidx.core.content.FileProvider;
 
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanner;
