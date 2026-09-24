@@ -17,7 +17,7 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Toast;
+import android.widget.Toast;\nimport android.util.Base64;\n\nimport androidx.core.content.FileProvider;
 
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanner;
@@ -188,13 +188,14 @@ public class MainActivity extends Activity {
                     final Uri returnUri = fileUri;
                     if (returnUri != null && result.getPages() != null && !result.getPages().isEmpty()) {
                         Toast.makeText(this, "Розпізнаю текст і таблицю…", Toast.LENGTH_SHORT).show();
-                        recognizePages(result.getPages(), json ->
-                                injectNativeOcr(json, () -> finishFileRequest(new Uri[]{returnUri}))
-                        );
+                        recognizePages(result.getPages(), json -> {
+                            Uri transportUri = createOcrTransportUri(returnUri, json);
+                            finishFileRequest(new Uri[]{transportUri != null ? transportUri : returnUri});
+                        });
                         return;
                     }
                     if (returnUri != null) {
-                        injectNativeOcr("", () -> finishFileRequest(new Uri[]{returnUri}));
+                        finishFileRequest(new Uri[]{returnUri});
                         return;
                     }
                 }
@@ -294,6 +295,58 @@ public class MainActivity extends Activity {
                 .addOnFailureListener(e ->
                         recognizePageAt(pages, index + 1, pageArray, callback)
                 );
+    }
+
+    private Uri createOcrTransportUri(Uri sourceUri, String json) {
+        if (sourceUri == null || json == null || json.isEmpty()) return sourceUri;
+
+        InputStream in = null;
+        OutputStream out = null;
+        try {
+            String mime = getContentResolver().getType(sourceUri);
+            String ext = ".bin";
+            if ("application/pdf".equalsIgnoreCase(mime)) ext = ".pdf";
+            else if ("image/png".equalsIgnoreCase(mime)) ext = ".png";
+            else if ("image/jpeg".equalsIgnoreCase(mime) || "image/jpg".equalsIgnoreCase(mime)) ext = ".jpg";
+
+            File dir = new File(getCacheDir(), "ardal-scans");
+            if (!dir.exists() && !dir.mkdirs()) return sourceUri;
+
+            File target = new File(dir, "ARDAL_NATIVE_" + System.currentTimeMillis() + ext);
+            in = getContentResolver().openInputStream(sourceUri);
+            if (in == null) return sourceUri;
+
+            out = new FileOutputStream(target);
+            byte[] buffer = new byte[32768];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+
+            String begin = "\n%ARDAL_NATIVE_OCR_B64_BEGIN\n";
+            String end = "\n%ARDAL_NATIVE_OCR_B64_END\n";
+            String encoded = Base64.encodeToString(
+                    json.getBytes(StandardCharsets.UTF_8),
+                    Base64.NO_WRAP
+            );
+            out.write(begin.getBytes(StandardCharsets.US_ASCII));
+            out.write(encoded.getBytes(StandardCharsets.US_ASCII));
+            out.write(end.getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+
+            Uri uri = FileProvider.getUriForFile(
+                    this,
+                    getPackageName() + ".fileprovider",
+                    target
+            );
+            grantUriPermission(getPackageName(), uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            return uri;
+        } catch (Exception e) {
+            return sourceUri;
+        } finally {
+            try { if (in != null) in.close(); } catch (Exception ignored) {}
+            try { if (out != null) out.close(); } catch (Exception ignored) {}
+        }
     }
 
     private void injectNativeOcr(String json, Runnable after) {
