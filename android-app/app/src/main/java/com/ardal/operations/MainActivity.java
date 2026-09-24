@@ -16,10 +16,10 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
-import com.google.android.gms.mlkit.vision.documentscanner.GmsDocumentScanner;
-import com.google.android.gms.mlkit.vision.documentscanner.GmsDocumentScannerOptions;
-import com.google.android.gms.mlkit.vision.documentscanner.GmsDocumentScanning;
-import com.google.android.gms.mlkit.vision.documentscanner.GmsDocumentScanningResult;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanner;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_SCAN = 2201;
