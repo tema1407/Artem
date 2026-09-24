@@ -17,6 +17,7 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.JavascriptInterface;
 import android.widget.Toast;
 import android.util.Base64;
 
@@ -50,6 +51,7 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> pendingFileCallback;
     private GmsDocumentScanner scanner;
     private TextRecognizer textRecognizer;
+    private String pendingNativeOcr = "";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -91,6 +93,8 @@ public class MainActivity extends Activity {
         settings.setAllowContentAccess(true);
         settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
+
+        webView.addJavascriptInterface(new ArdalNativeBridge(), "ArdalNative");
 
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
@@ -195,12 +199,13 @@ public class MainActivity extends Activity {
                     if (returnUri != null && result.getPages() != null && !result.getPages().isEmpty()) {
                         Toast.makeText(this, "Розпізнаю текст і таблицю…", Toast.LENGTH_SHORT).show();
                         recognizePages(result.getPages(), json -> {
-                            Uri transportUri = createOcrTransportUri(returnUri, json);
-                            finishFileRequest(new Uri[]{transportUri != null ? transportUri : returnUri});
+                            pendingNativeOcr = json == null ? "" : json;
+                            finishFileRequest(new Uri[]{returnUri});
                         });
                         return;
                     }
                     if (returnUri != null) {
+                        pendingNativeOcr = "";
                         finishFileRequest(new Uri[]{returnUri});
                         return;
                     }
@@ -220,6 +225,15 @@ public class MainActivity extends Activity {
             } else {
                 finishFileRequest(null);
             }
+        }
+    }
+
+    private class ArdalNativeBridge {
+        @JavascriptInterface
+        public String consumeNativeOcr() {
+            String value = pendingNativeOcr == null ? "" : pendingNativeOcr;
+            pendingNativeOcr = "";
+            return value;
         }
     }
 
