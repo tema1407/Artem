@@ -32,23 +32,20 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
+      - name: Build stable-signed internal APK
         working-directory: android-app
         run: gradle :app:assembleDebug --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Ardal-Operations-Android
+          name: Ardal-Operations-Native-OCR
           path: android-app/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publish latest installable APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="android-latest"
+          TAG="android-native-ocr"
           gh release delete "$TAG" --yes --cleanup-tag || true
-          gh release create "$TAG" \
-            android-app/app/build/outputs/apk/debug/app-debug.apk#Ardal-Operations.apk \
-            --title "Ardal Operations Android" \
-            --notes "Тестова Android-збірка Ardal Operations з нативним сканером документів."
+          gh release create "$TAG"             android-app/app/build/outputs/apk/debug/app-debug.apk#Ardal-Operations-Native-OCR.apk             --title "Ardal Operations Android — Native OCR"             --notes "Internal Android build with stable signing, document scanner and on-device Cyrillic layout OCR."

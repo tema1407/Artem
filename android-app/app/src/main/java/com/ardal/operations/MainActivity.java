@@ -6,10 +6,10 @@ import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.IntentSender;
+import android.graphics.Rect;
 import android.net.Uri;
-import android.os.Bundle;
 import android.os.Build;
-import android.graphics.Insets;
+import android.os.Bundle;
 import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
@@ -19,10 +19,21 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanner;
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions;
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning;
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult;
+import com.google.mlkit.vision.text.Text;
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.cyrillic.CyrillicTextRecognizerOptions;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.IOException;
+import java.util.List;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_SCAN = 2201;
@@ -32,6 +43,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> pendingFileCallback;
     private GmsDocumentScanner scanner;
+    private TextRecognizer textRecognizer;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -41,16 +53,13 @@ public class MainActivity extends Activity {
         webView = new WebView(this);
         setContentView(webView);
 
-        // Keep Ardal controls clear of Android's status/navigation bars
-        // on phones and tablets, including Android 15 edge-to-edge mode.
         webView.setOnApplyWindowInsetsListener((view, insets) -> {
-            int left = 0;
-            int top = 0;
-            int right = 0;
-            int bottom = 0;
-
+            int left;
+            int top;
+            int right;
+            int bottom;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                Insets bars = insets.getInsets(
+                android.graphics.Insets bars = insets.getInsets(
                         WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()
                 );
                 left = bars.left;
@@ -63,7 +72,6 @@ public class MainActivity extends Activity {
                 right = insets.getSystemWindowInsetRight();
                 bottom = insets.getSystemWindowInsetBottom();
             }
-
             view.setPadding(left, top, right, bottom);
             return insets;
         });
@@ -119,6 +127,10 @@ public class MainActivity extends Activity {
                 .build();
         scanner = GmsDocumentScanning.getClient(options);
 
+        textRecognizer = TextRecognition.getClient(
+                new CyrillicTextRecognizerOptions.Builder().build()
+        );
+
         if (savedInstanceState == null) {
             webView.loadUrl(ARDAL_URL);
         } else {
@@ -165,13 +177,26 @@ public class MainActivity extends Activity {
         if (requestCode == REQUEST_SCAN) {
             if (resultCode == RESULT_OK && data != null) {
                 GmsDocumentScanningResult result = GmsDocumentScanningResult.fromActivityResultIntent(data);
-                if (result != null && result.getPdf() != null && result.getPdf().getUri() != null) {
-                    finishFileRequest(new Uri[]{result.getPdf().getUri()});
-                    return;
-                }
-                if (result != null && result.getPages() != null && !result.getPages().isEmpty()) {
-                    finishFileRequest(new Uri[]{result.getPages().get(0).getImageUri()});
-                    return;
+                if (result != null) {
+                    Uri fileUri = null;
+                    if (result.getPdf() != null && result.getPdf().getUri() != null) {
+                        fileUri = result.getPdf().getUri();
+                    } else if (result.getPages() != null && !result.getPages().isEmpty()) {
+                        fileUri = result.getPages().get(0).getImageUri();
+                    }
+
+                    final Uri returnUri = fileUri;
+                    if (returnUri != null && result.getPages() != null && !result.getPages().isEmpty()) {
+                        Toast.makeText(this, "Розпізнаю текст і таблицю…", Toast.LENGTH_SHORT).show();
+                        recognizePages(result.getPages(), json ->
+                                injectNativeOcr(json, () -> finishFileRequest(new Uri[]{returnUri}))
+                        );
+                        return;
+                    }
+                    if (returnUri != null) {
+                        injectNativeOcr("", () -> finishFileRequest(new Uri[]{returnUri}));
+                        return;
+                    }
                 }
             }
             finishFileRequest(null);
@@ -184,11 +209,101 @@ public class MainActivity extends Activity {
                 try {
                     getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 } catch (Exception ignored) {}
-                finishFileRequest(new Uri[]{uri});
+                injectNativeOcr("", () -> finishFileRequest(new Uri[]{uri}));
             } else {
                 finishFileRequest(null);
             }
         }
+    }
+
+    private interface OcrCallback {
+        void done(String json);
+    }
+
+    private void recognizePages(List<GmsDocumentScanningResult.Page> pages, OcrCallback callback) {
+        JSONArray pageArray = new JSONArray();
+        recognizePageAt(pages, 0, pageArray, callback);
+    }
+
+    private void recognizePageAt(
+            List<GmsDocumentScanningResult.Page> pages,
+            int index,
+            JSONArray pageArray,
+            OcrCallback callback
+    ) {
+        if (index >= pages.size()) {
+            try {
+                JSONObject root = new JSONObject();
+                root.put("engine", "mlkit-cyrillic-layout-v1");
+                root.put("pages", pageArray);
+                callback.done(root.toString());
+            } catch (Exception e) {
+                callback.done("");
+            }
+            return;
+        }
+
+        Uri uri = pages.get(index).getImageUri();
+        if (uri == null) {
+            recognizePageAt(pages, index + 1, pageArray, callback);
+            return;
+        }
+
+        final InputImage image;
+        try {
+            image = InputImage.fromFilePath(this, uri);
+        } catch (IOException e) {
+            recognizePageAt(pages, index + 1, pageArray, callback);
+            return;
+        }
+
+        textRecognizer.process(image)
+                .addOnSuccessListener(result -> {
+                    try {
+                        JSONObject page = new JSONObject();
+                        JSONArray lineArray = new JSONArray();
+                        int maxRight = 1;
+                        int maxBottom = 1;
+
+                        for (Text.TextBlock block : result.getTextBlocks()) {
+                            for (Text.Line line : block.getLines()) {
+                                Rect box = line.getBoundingBox();
+                                if (box == null) continue;
+
+                                JSONObject item = new JSONObject();
+                                item.put("text", line.getText());
+                                item.put("left", box.left);
+                                item.put("top", box.top);
+                                item.put("right", box.right);
+                                item.put("bottom", box.bottom);
+                                lineArray.put(item);
+
+                                maxRight = Math.max(maxRight, box.right);
+                                maxBottom = Math.max(maxBottom, box.bottom);
+                            }
+                        }
+
+                        page.put("width", maxRight);
+                        page.put("height", maxBottom);
+                        page.put("lines", lineArray);
+                        pageArray.put(page);
+                    } catch (Exception ignored) {}
+
+                    recognizePageAt(pages, index + 1, pageArray, callback);
+                })
+                .addOnFailureListener(e ->
+                        recognizePageAt(pages, index + 1, pageArray, callback)
+                );
+    }
+
+    private void injectNativeOcr(String json, Runnable after) {
+        if (webView == null) {
+            after.run();
+            return;
+        }
+        String quoted = JSONObject.quote(json == null ? "" : json);
+        String js = "window.setNativeScanOcr && window.setNativeScanOcr(" + quoted + ");";
+        webView.evaluateJavascript(js, value -> after.run());
     }
 
     private void finishFileRequest(Uri[] uris) {
@@ -216,6 +331,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         finishFileRequest(null);
+        if (textRecognizer != null) {
+            textRecognizer.close();
+            textRecognizer = null;
+        }
         if (webView != null) {
             webView.stopLoading();
             webView.setWebChromeClient(null);
