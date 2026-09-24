@@ -8,6 +8,9 @@ import android.content.Intent;
 import android.content.IntentSender;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
+import android.graphics.Insets;
+import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -37,6 +40,34 @@ public class MainActivity extends Activity {
 
         webView = new WebView(this);
         setContentView(webView);
+
+        // Keep Ardal controls clear of Android's status/navigation bars
+        // on phones and tablets, including Android 15 edge-to-edge mode.
+        webView.setOnApplyWindowInsetsListener((view, insets) -> {
+            int left = 0;
+            int top = 0;
+            int right = 0;
+            int bottom = 0;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Insets bars = insets.getInsets(
+                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()
+                );
+                left = bars.left;
+                top = bars.top;
+                right = bars.right;
+                bottom = bars.bottom;
+            } else {
+                left = insets.getSystemWindowInsetLeft();
+                top = insets.getSystemWindowInsetTop();
+                right = insets.getSystemWindowInsetRight();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+
+            view.setPadding(left, top, right, bottom);
+            return insets;
+        });
+        webView.requestApplyInsets();
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
