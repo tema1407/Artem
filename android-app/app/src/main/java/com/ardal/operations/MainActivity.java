@@ -20,8 +20,6 @@ import android.webkit.WebViewClient;
 import android.widget.Toast;
 import android.util.Base64;
 
-import androidx.core.content.FileProvider;
-
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanner;
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions;
@@ -337,12 +335,7 @@ public class MainActivity extends Activity {
             out.write(end.getBytes(StandardCharsets.US_ASCII));
             out.flush();
 
-            Uri uri = FileProvider.getUriForFile(
-                    this,
-                    getPackageName() + ".fileprovider",
-                    target
-            );
-            grantUriPermission(getPackageName(), uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Uri uri = Uri.fromFile(target);
             return uri;
         } catch (Exception e) {
             return sourceUri;
